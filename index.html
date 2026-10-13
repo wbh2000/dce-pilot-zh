@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DCE 中文预测试</title>
+<style>
+:root{font-family:Arial,"Microsoft YaHei",sans-serif;color:#17202a;background:#f4f6f8;font-size:16px;line-height:1.55}
+*{box-sizing:border-box;letter-spacing:0}body{margin:0}header{background:#fff;border-bottom:1px solid #d7dee8;padding:18px 24px}
+header>div,main{max-width:1100px;margin:auto}header>div{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+h1{font-size:22px;margin:0}h2{font-size:22px;line-height:1.4;margin:0 0 20px}main{padding:28px 24px}
+button,input{font:inherit}button{cursor:pointer;border:0;border-radius:6px;padding:11px 18px;background:#0f766e;color:#fff;min-height:44px;font-weight:600}
+button.secondary{background:#e4e9ef;color:#17202a}button:disabled{opacity:.45;cursor:not-allowed}
+button:focus-visible,input:focus-visible{outline:3px solid #b45309;outline-offset:3px}
+input[type=text]{display:block;max-width:100%;width:360px;padding:10px;border:1px solid #9aa8b8;border-radius:5px;margin:8px 0 18px}
+input[type=radio]{width:22px;height:22px;accent-color:#0f766e;margin:0}
+[hidden]{display:none!important}.muted{color:#536174;font-size:14px}.top,.nav,.actions{display:flex;gap:12px;justify-content:space-between;align-items:center;flex-wrap:wrap}
+.top{margin-bottom:24px}.nav{margin-top:20px}.actions{justify-content:flex-start;margin-top:20px}
+progress{accent-color:#0f766e;width:220px;max-width:100%;height:9px;display:block;margin-top:8px}
+table{width:100%;table-layout:fixed;border-collapse:collapse;background:#fff}th,td{width:50%;padding:16px 20px;vertical-align:top;border:1px solid #d7dee8;overflow-wrap:break-word}
+th{font-size:20px;background:#edf1f5}td.selected,th.selected{background:#e8f6f3}
+td[data-option]{cursor:pointer}tfoot td{padding:0}tfoot label{display:flex;justify-content:center;align-items:center;gap:12px;min-height:60px;cursor:pointer;font-weight:700}
+#warning,#errorText{color:#9a3412}#warning{min-height:24px;margin:12px 0 0}#errorPanel{border-left:4px solid #b45309;padding:18px;background:#fff7ed;margin-bottom:22px}
+#doneText,#status{overflow-wrap:anywhere}
+@media(max-width:600px){main{padding:20px 12px}header{padding:14px 12px}td,th{padding:12px 9px}td{font-size:14px;line-height:1.5}th{font-size:18px}h2{font-size:20px}.nav button{flex:1}}
+</style>
+</head>
+<body>
+<header><div><h1>DCE 中文预测试</h1><span id="status" class="muted"></span></div></header>
+<main>
+<section id="errorPanel" role="alert" hidden><h2>问卷暂时无法继续</h2><p id="errorText"></p><button id="resetError" class="secondary" hidden>清除损坏或不兼容的存档</button></section>
+<section id="startPanel" hidden><h2>开始问卷</h2><label for="respondentId">参与者编号（可留空）</label><input id="respondentId" type="text" maxlength="120" autocomplete="off"><button id="startButton">开始</button></section>
+<section id="questionPanel" hidden>
+<div class="top"><div><span id="progressText"></span><progress id="progressBar" max="3" value="1"></progress></div></div>
+<h2 id="questionPrompt">以下两种治疗方案，您更倾向于选择哪一种？</h2>
+<table aria-labelledby="questionPrompt"><thead><tr><th scope="col" data-option="A">治疗方案 A</th><th scope="col" data-option="B">治疗方案 B</th></tr></thead><tbody id="comparison"></tbody>
+<tfoot><tr><td data-option="A"><label><input type="radio" name="choice" value="A" aria-label="选择治疗方案 A">选择</label></td><td data-option="B"><label><input type="radio" name="choice" value="B" aria-label="选择治疗方案 B">选择</label></td></tr></tfoot></table>
+<p id="warning" role="status"></p><div class="nav"><button id="prevButton" class="secondary">上一题</button><button id="nextButton">下一题</button></div>
+</section>
+<section id="donePanel" hidden><h2>已完成</h2><p id="doneText"></p><div class="actions"><button id="downloadButton">再次下载 Excel</button><button id="restartButton" class="secondary">开始新参与者</button></div></section>
+</main>
+<script>
+"use strict";
+const STORAGE_KEY="dce_pilot_3_chinese_v1";
+const BANK_ID="pilot_3_chinese_v1";
+const QUESTION_COUNT=3;
+// Attribute order in exported data: LDL-C, stroke, heart attack, revascularization, diabetes, pain, regimen.
+const ATTRIBUTES=[
+ {name:"6个月后，坏胆固醇（LDL-C）的变化",levels:["6个月后，坏胆固醇（LDL-C）降低<strong>32%</strong>","6个月后，坏胆固醇（LDL-C）降低<strong>50%</strong>","6个月后，坏胆固醇（LDL-C）降低<strong>70%</strong>"]},
+ {name:"服用药物2.5年后，中风风险的变化",levels:["服用药物2.5年后，中风风险与不服药相比没有变化","服用药物2.5年后，中风风险降低了<strong>25%</strong>","服用药物2.5年后，中风风险降低了<strong>50%</strong>"]},
+ {name:"服用药物2.5年后，心脏病发作风险的变化",levels:["服用药物2.5年后，心脏病发作风险与不服药相比<strong>没有变化</strong>","服用药物2.5年后，心脏病发作风险降低了<strong>10%</strong>","服用药物2.5年后，心脏病发作风险降低了<strong>25%</strong>"]},
+ {name:"服用药物2.5年后，进行血运重建术风险的变化",levels:["服用药物2.5年后，进行血运重建术的风险与不服药相比<strong>没有变化</strong>","服用药物2.5年后，进行血运重建术的风险降低了<strong>10%</strong>","服用药物2.5年后，进行血运重建术的风险降低了<strong>25%</strong>"]},
+ {name:"服用药物5年后，新发糖尿病风险的变化",levels:["服用药物5年后，新发糖尿病的风险与不服药相比<strong>并未提高</strong>","服用药物5年后，新发糖尿病的风险与不服药相比提高了<strong>3%</strong>","服用药物5年后，新发糖尿病的风险与不服药相比提高了<strong>6%</strong>"]},
+ {name:"使用药物后出现肌肉或关节疼痛的患者比例",levels:["<strong>2%</strong>的患者在使用药物后出现肌肉或关节疼痛","<strong>11%</strong>的患者在使用药物后出现肌肉或关节疼痛","<strong>25%</strong>的患者在使用药物后出现肌肉或关节疼痛"]},
+ {name:"给药方式",levels:[
+  "口服一粒，<strong>每日一次,需在第一餐或喝水、黑咖啡或普通茶以外的任何饮品前至少30分钟服用</strong>",
+  "口服一粒，<strong>每日一次</strong>；另加一粒口服药片，每日一次且需在<strong>第一餐或喝水、黑咖啡或普通茶以外的任何饮品前30分钟服用</strong>",
+  "口服一粒，<strong>每日一次</strong>；另加针剂，<strong>每两周</strong>在家中使用预先填充的注射器或自动注射器在腹部、上臂或大腿内自行注射一次",
+  "口服一粒，<strong>每日一次</strong>；另加针剂，每月在家中使用预先填充的注射器或自动注射器在腹部、上臂或大腿内自行注射一次",
+  "口服一粒，<strong>每日一次</strong>；另加针剂，由医疗专业人员在第一次注射的3个月后再进行一次注射，之后<strong>每6个月</strong>进行一次注射"
+ ]}
+];
+const DISPLAY_ORDER=[7,1,2,3,4,5,6];
+const QUESTIONS=[
+ {id:"PILOT01",A:[1,2,1,3,3,1,3],B:[2,1,2,1,1,2,2]},
+ {id:"PILOT02",A:[3,3,3,1,3,1,5],B:[2,2,2,2,1,2,2]},
+ {id:"PILOT03",A:[2,3,1,2,1,3,1],B:[1,2,3,3,2,1,3]}
+];
+const $=id=>document.getElementById(id);
+let state=null,storedRaw=null,blocked=false;
+function levelHtml(row,option,attribute){
+ const text=ATTRIBUTES[attribute-1].levels[row[option][attribute-1]-1];
+ return row.id==="PILOT03"&&option==="B"&&attribute===6?text+"。":text;
+}
+function levelText(row,option,attribute){const el=document.createElement("div");el.innerHTML=levelHtml(row,option,attribute);return el.textContent;}
+function fail(message,reset=false){blocked=true;["startPanel","questionPanel","donePanel"].forEach(id=>$(id).hidden=true);$("errorPanel").hidden=false;$("errorText").textContent=message;$("resetError").hidden=!reset;}
+function validateState(s){
+ if(!s||s.bank_id!==BANK_ID||!Number.isInteger(s.current_index)||s.current_index<0||s.current_index>=QUESTION_COUNT
+ ||typeof s.respondent_id!=="string"||!s.respondent_id.trim()||typeof s.session_id!=="string"||!s.session_id
+ ||typeof s.started_at!=="string"||!Number.isFinite(Date.parse(s.started_at))||!s.choices||typeof s.choices!=="object"||Array.isArray(s.choices)
+ ||!["active","submitted"].includes(s.status))throw new Error("存档格式或题库版本不兼容。");
+ const ids=new Set(QUESTIONS.map(q=>q.id));
+ if(Object.entries(s.choices).some(([id,v])=>!ids.has(id)||!["A","B"].includes(v)))throw new Error("存档答案无效。");
+ if(s.status==="submitted"&&(Object.keys(s.choices).length!==QUESTION_COUNT||!Number.isFinite(Date.parse(s.submitted_at))))throw new Error("提交存档不完整。");
+}
+function persist(next){
+ try{validateState(next);if(localStorage.getItem(STORAGE_KEY)!==storedRaw)throw new Error("另一页面已更新此问卷，请刷新后继续。");
+  const raw=JSON.stringify(next);localStorage.setItem(STORAGE_KEY,raw);storedRaw=raw;state=next;return true;
+ }catch(error){fail("无法保存答题进度："+error.message+" 请检查浏览器存储设置并刷新页面。");return false;}
+}
+function render(){
+ if(blocked)return;
+ $("startPanel").hidden=!!state;$("questionPanel").hidden=!state||state.status!=="active";$("donePanel").hidden=!state||state.status!=="submitted";
+ $("status").textContent=state?"参与者："+state.respondent_id:"";
+ if(!state)return;
+ if(state.status==="submitted"){$("doneText").textContent="答案已保存。可下载本次答题的 Excel 兼容文件。";return;}
+ const row=QUESTIONS[state.current_index];
+ $("progressText").textContent="第"+(state.current_index+1)+"题 / 共3题";
+ $("progressBar").value=state.current_index+1;
+ $("prevButton").disabled=state.current_index===0;
+ $("nextButton").textContent=state.current_index===2?"提交并下载 Excel":"下一题";
+ $("comparison").replaceChildren();
+ DISPLAY_ORDER.forEach(attribute=>{
+  const tr=document.createElement("tr");
+  ["A","B"].forEach(option=>{
+   const td=document.createElement("td");td.dataset.option=option;td.dataset.attribute=attribute;td.dataset.level="level"+row[option][attribute-1];td.innerHTML=levelHtml(row,option,attribute);tr.append(td);
+  });$("comparison").append(tr);
+ });
+ const choice=state.choices[row.id];
+ document.querySelectorAll("[data-option]").forEach(el=>el.classList.toggle("selected",el.dataset.option===choice));
+ document.querySelectorAll('input[name="choice"]').forEach(el=>el.checked=el.value===choice);
+}
+function start(){
+ if(blocked||state)return;
+ const id=crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+"-"+Math.random().toString(36).slice(2);
+ const next={bank_id:BANK_ID,session_id:id,respondent_id:$("respondentId").value.trim()||"P-"+id,current_index:0,choices:{},started_at:new Date().toISOString(),submitted_at:null,status:"active"};
+ if(persist(next))render();
+}
+function choose(option){
+ if(blocked||!state||state.status!=="active"||!["A","B"].includes(option))return;
+ if(persist({...state,choices:{...state.choices,[QUESTIONS[state.current_index].id]:option}})){$("warning").textContent="";render();}
+}
+function advance(){
+ if(blocked||!state||state.status!=="active")return;
+ if(!state.choices[QUESTIONS[state.current_index].id]){$("warning").textContent="请选择 A 或 B 后再继续。";return;}
+ if(state.current_index<QUESTION_COUNT-1){if(persist({...state,current_index:state.current_index+1}))render();return;}
+ if(QUESTIONS.some(q=>!["A","B"].includes(state.choices[q.id]))){$("warning").textContent="请完成所有题目后再提交。";return;}
+ if(persist({...state,status:"submitted",submitted_at:new Date().toISOString()})){render();downloadExcel();}
+}
+function reset(){
+ if(!confirm("开始新参与者将清除当前浏览器中的答题存档。请先下载需要保留的数据。确定继续？"))return;
+ try{localStorage.removeItem(STORAGE_KEY);storedRaw=null;state=null;blocked=false;$("errorPanel").hidden=true;$("respondentId").value="";$("warning").textContent="";render();}
+ catch(error){fail("无法清除存档："+error.message);}
+}
+function workbookRows(){
+ const meta=["respondent_id","session_id","bank_id","started_at","submitted_at","choice_set_id","task_order"];
+ const fields=ATTRIBUTES.map((_,i)=>"attribute"+(i+1));
+ const levelFields=["A","B"].flatMap(option=>fields.map(field=>"option_"+option+"_"+field+"_level"));
+ const long=[[...meta,"alternative","chosen","respondent_choice",...fields.map(f=>f+"_level"),...fields.map(f=>f+"_text")]];
+ const wide=[[...meta,"respondent_choice",...levelFields]];
+ QUESTIONS.forEach((row,index)=>{
+  const common=[state.respondent_id,state.session_id,BANK_ID,state.started_at,state.submitted_at,row.id,index+1],choice=state.choices[row.id];
+  wide.push([...common,choice,...[...row.A,...row.B].map(n=>"level"+n)]);
+  for(const option of ["A","B"])long.push([...common,option,Number(choice===option),choice,...row[option].map(n=>"level"+n),...ATTRIBUTES.map((_,i)=>levelText(row,option,i+1))]);
+ });
+ const mapping=[["attribute_id","attribute","level_id","display_text","display_order"]];
+ ATTRIBUTES.forEach((a,i)=>a.levels.forEach((_,j)=>{
+  const temporary={A:Array(7).fill(1)};temporary.A[i]=j+1;
+  mapping.push([i+1,a.name,"level"+(j+1),levelText(temporary,"A",i+1),DISPLAY_ORDER.indexOf(i+1)+1]);
+ }));
+ return {responses_long:long,responses_tasks:wide,attributes_levels:mapping};
+}
+function xmlEscape(value){return String(value??"").replace(/[&<>"\u0000-\u0008\u000B\u000C\u000E-\u001F]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]||""));}
+function workbookXml(){return '<?xml version="1.0" encoding="UTF-8"?><?mso-application progid="Excel.Sheet"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">'+Object.entries(workbookRows()).map(([name,rows])=>'<Worksheet ss:Name="'+name+'"><Table>'+rows.map(row=>"<Row>"+row.map(v=>'<Cell><Data ss:Type="'+(typeof v==="number"?"Number":"String")+'">'+xmlEscape(v)+"</Data></Cell>").join("")+"</Row>").join("")+"</Table></Worksheet>").join("")+"</Workbook>";}
+function downloadExcel(){
+ if(blocked||!state||state.status!=="submitted")return;
+ try{const blob=new Blob([workbookXml()],{type:"application/vnd.ms-excel;charset=utf-8"});const url=URL.createObjectURL(blob),link=document.createElement("a");
+  link.href=url;link.download="dce_pilot_"+state.respondent_id.replace(/[^\w\u4e00-\u9fa5-]/g,"_").slice(0,60)+"_"+state.session_id+".xls";
+  document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+ }catch(error){$("doneText").textContent="答案已保存，下载失败，请再次下载："+error.message;}
+}
+$("startButton").addEventListener("click",start);
+$("nextButton").addEventListener("click",advance);
+$("prevButton").addEventListener("click",()=>{if(!blocked&&state.current_index>0&&persist({...state,current_index:state.current_index-1})){$("warning").textContent="";render();}});
+document.querySelector("table").addEventListener("click",event=>{const cell=event.target.closest("[data-option]");if(cell)choose(cell.dataset.option);});
+document.querySelectorAll('input[name="choice"]').forEach(el=>el.addEventListener("change",()=>choose(el.value)));
+["restartButton","resetError"].forEach(id=>$(id).addEventListener("click",reset));
+$("downloadButton").addEventListener("click",downloadExcel);
+window.addEventListener("storage",event=>{if(event.key===STORAGE_KEY||event.key===null)fail("此问卷存档已在另一页面更改，请刷新页面后继续。");});
+try{
+ if(QUESTIONS.length!==QUESTION_COUNT||new Set(QUESTIONS.map(q=>q.id)).size!==QUESTION_COUNT||QUESTIONS.some(q=>[q.A,q.B].some(p=>p.length!==7||p.some((n,i)=>!Number.isInteger(n)||n<1||n>ATTRIBUTES[i].levels.length))))throw new Error("三道题的数据不完整。");
+ const probe=STORAGE_KEY+"_probe";localStorage.setItem(probe,"1");localStorage.removeItem(probe);storedRaw=localStorage.getItem(STORAGE_KEY);
+ if(storedRaw!==null){state=JSON.parse(storedRaw);validateState(state);}render();
+}catch(error){fail("无法读取问卷或存档："+error.message+" 请检查浏览器存储设置；如需放弃旧存档，可清除后重新开始。",true);}
+</script>
+</body>
+</html>
+
