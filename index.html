@@ -42,7 +42,7 @@ td[data-option]{cursor:pointer}tfoot td{padding:0}tfoot label{display:flex;justi
 <script>
 "use strict";
 const STORAGE_KEY="dce_pilot_3_chinese_v1";
-const BANK_ID="pilot_3_chinese_v1";
+const BANK_ID="pilot_3_chinese_v2";
 const QUESTION_COUNT=3;
 // Attribute order in exported data: LDL-C, stroke, heart attack, revascularization, diabetes, pain, regimen.
 const ATTRIBUTES=[
@@ -56,7 +56,7 @@ const ATTRIBUTES=[
   "口服一粒，<strong>每日一次,需在第一餐或喝水、黑咖啡或普通茶以外的任何饮品前至少30分钟服用</strong>",
   "口服一粒，<strong>每日一次</strong>；另加一粒口服药片，每日一次且需在<strong>第一餐或喝水、黑咖啡或普通茶以外的任何饮品前30分钟服用</strong>",
   "口服一粒，<strong>每日一次</strong>；另加针剂，<strong>每两周</strong>在家中使用预先填充的注射器或自动注射器在腹部、上臂或大腿内自行注射一次",
-  "口服一粒，<strong>每日一次</strong>；另加针剂，每月在家中使用预先填充的注射器或自动注射器在腹部、上臂或大腿内自行注射一次",
+  "口服一粒，<strong>每日一次</strong>；另加针剂，<strong>每月</strong>在家中使用预先填充的注射器或自动注射器在腹部、上臂或大腿内自行注射一次",
   "口服一粒，<strong>每日一次</strong>；另加针剂，由医疗专业人员在第一次注射的3个月后再进行一次注射，之后<strong>每6个月</strong>进行一次注射"
  ]}
 ];
@@ -64,7 +64,7 @@ const DISPLAY_ORDER=[7,1,2,3,4,5,6];
 const QUESTIONS=[
  {id:"PILOT01",A:[1,2,1,3,3,1,3],B:[2,1,2,1,1,2,2]},
  {id:"PILOT02",A:[3,3,3,1,3,1,5],B:[2,2,2,2,1,2,2]},
- {id:"PILOT03",A:[2,3,1,2,1,3,1],B:[1,2,3,3,2,1,3]}
+ {id:"PILOT03",A:[2,3,1,2,1,3,1],B:[1,2,3,3,2,1,4]}
 ];
 const $=id=>document.getElementById(id);
 let state=null,storedRaw=null,blocked=false;
@@ -75,6 +75,7 @@ function levelHtml(row,option,attribute){
 function levelText(row,option,attribute){const el=document.createElement("div");el.innerHTML=levelHtml(row,option,attribute);return el.textContent;}
 function fail(message,reset=false){blocked=true;["startPanel","questionPanel","donePanel"].forEach(id=>$(id).hidden=true);$("errorPanel").hidden=false;$("errorText").textContent=message;$("resetError").hidden=!reset;}
 function validateState(s){
+ if(s&&s.bank_id!==BANK_ID)throw new Error("题库已更新，请清除旧版答题存档后重新开始。");
  if(!s||s.bank_id!==BANK_ID||!Number.isInteger(s.current_index)||s.current_index<0||s.current_index>=QUESTION_COUNT
  ||typeof s.respondent_id!=="string"||!s.respondent_id.trim()||typeof s.session_id!=="string"||!s.session_id
  ||typeof s.started_at!=="string"||!Number.isFinite(Date.parse(s.started_at))||!s.choices||typeof s.choices!=="object"||Array.isArray(s.choices)
